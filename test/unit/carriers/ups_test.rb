@@ -52,6 +52,11 @@ class UPSTest < Test::Unit::TestCase
     assert_equal 'd', @carrier.find_tracking_info('1Z5FX0076803466397').status_code.downcase
   end
 
+  def test_find_tracking_info_should_return_correct_status_code_detail
+    @carrier.expects(:commit).returns(@tracking_response)
+    assert_equal 'kb', @carrier.find_tracking_info('1Z5FX0076803466397').status_code_detail.downcase
+  end
+
   def test_find_tracking_info_should_return_correct_status_description
     @carrier.expects(:commit).returns(@tracking_response)
     assert_equal 'delivered', @carrier.find_tracking_info('1Z5FX0076803466397').status_description.downcase

@@ -371,7 +371,7 @@ module ActiveMerchant
                               :packages => packages,
                               :delivery_range => delivery_range)
         end
-		
+
         if rate_estimates.empty?
           success = false
           message = "No shipping rates could be found for the destination address" if message.blank?
@@ -450,6 +450,7 @@ module ActiveMerchant
           scheduled_delivery_time = extract_timestamp(tracking_details, 'EstimatedDeliveryTimestamp')
           
           tracking_details.elements.each('Events') do |event|
+            event_type = event.get_text('EventType').to_s
             address  = event.elements['Address']
 
             city     = address.get_text('City').to_s
@@ -464,7 +465,7 @@ module ActiveMerchant
             time          = Time.parse("#{event.get_text('Timestamp').to_s}")
             zoneless_time = time.utc
 
-            shipment_events << ShipmentEvent.new(description, zoneless_time, location)
+            shipment_events << ShipmentEvent.new(description, zoneless_time, location, nil, event_type)
           end
           shipment_events = shipment_events.sort_by(&:time)
 
