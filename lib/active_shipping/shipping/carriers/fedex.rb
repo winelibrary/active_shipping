@@ -10,6 +10,7 @@ module ActiveMerchant
     # :account is your FedEx account number
     # :login is your meter number
     class FedEx < Carrier
+      attr_accessor :api_version
       self.retry_safe = true
       
       cattr_reader :name
@@ -146,7 +147,7 @@ module ActiveMerchant
         rate_request = build_rate_request(origin, destination, packages, options)
         
         xml = commit(save_request(rate_request), (options[:test] || false))
-        response = remove_version_prefix(xml)
+        response = xml #remove_version_prefix(xml)
 
         parse_rate_response(origin, destination, packages, response, options)
       end
@@ -345,28 +346,33 @@ module ActiveMerchant
         success, message = nil
         
         xml = build_document(response)
-        root_node = xml.elements['RateReply']
+        root_node = extract(xml.elements, :[], 'RateReply')
         
         success = response_success?(xml)
         message = response_message(xml)
         
-        root_node.elements.each('RateReplyDetails') do |rated_shipment|
-          service_code = rated_shipment.get_text('ServiceType').to_s
-          is_saturday_delivery = rated_shipment.get_text('AppliedOptions').to_s == 'SATURDAY_DELIVERY'
+        extract(root_node.elements, :each, 'RateReplyDetails') do |rated_shipment|
+          # TODO -- Extract this into a function
+          service_code = extract(rated_shipment, :get_text, 'ServiceType').to_s
+          applied_options = extract(rated_shipment, :get_text, 'AppliedOptions').to_s
+          is_saturday_delivery = applied_options == 'SATURDAY_DELIVERY'
           service_type = is_saturday_delivery ? "#{service_code}_SATURDAY_DELIVERY" : service_code
-          
-          transit_time = rated_shipment.get_text('TransitTime').to_s if service_code == "FEDEX_GROUND"
-          max_transit_time = rated_shipment.get_text('MaximumTransitTime').to_s if service_code == "FEDEX_GROUND"
 
-          delivery_timestamp = rated_shipment.get_text('DeliveryTimestamp').to_s
+          transit_time = extract(rated_shipment, :get_text, 'TransitTime').to_s if service_code == "FEDEX_GROUND"
+          max_transit_time = extract(rated_shipment, :get_text, 'MaximumTransitTime').to_s if service_code == "FEDEX_GROUND"
+
+          delivery_timestamp = extract(rated_shipment, :get_text, 'DeliveryTimestamp').to_s
 
           delivery_range = delivery_range_from(transit_time, max_transit_time, delivery_timestamp, options)
 
-          currency = handle_incorrect_currency_codes(rated_shipment.get_text('RatedShipmentDetails/ShipmentRateDetail/TotalNetCharge/Currency').to_s)
+          currency = extract(rated_shipment, :get_text, 'RatedShipmentDetails/ShipmentRateDetail/TotalNetCharge/Currency').to_s
+          currency = handle_incorrect_currency_codes(currency)
+          total_price = extract(rated_shipment, :get_text, 'RatedShipmentDetails/ShipmentRateDetail/TotalNetCharge/Amount').to_s.to_f
+
           rate_estimates << RateEstimate.new(origin, destination, @@name,
                               self.class.service_name_for_code(service_type),
                               :service_code => service_code,
-                              :total_price => rated_shipment.get_text('RatedShipmentDetails/ShipmentRateDetail/TotalNetCharge/Amount').to_s.to_f,
+                              :total_price => total_price,
                               :currency => currency,
                               :packages => packages,
                               :delivery_range => delivery_range)
@@ -500,11 +506,11 @@ module ActiveMerchant
       end
 
       def response_status_node(document)
-        document.elements['/*/Notifications/']
+        extract(document.elements, :[], 'Notifications')
       end
       
       def response_success?(document)
-        %w{SUCCESS WARNING NOTE}.include? response_status_node(document).get_text('Severity').to_s
+        %w{SUCCESS WARNING NOTE}.include? extract(response_status_node(document), :get_text, 'Severity').to_s
       end
       
       def response_message(document)
@@ -571,11 +577,36 @@ module ActiveMerchant
         end
       end
 
+      def determine_api_version(xml)
+        if match = xml.match(/xmlns:(v[0-9]+)/)
+          match[1]
+        end
+      end
+
       def build_document(xml)
+        self.api_version = determine_api_version(xml)
+        if !api_version
+          puts "Could not determine API version from XML, attempting to sanitize document"
+          xml = remove_version_prefix(xml)
+        end
         REXML::Document.new(xml)
       rescue REXML::ParseException => e
         raise ActiveMerchant::Shipping::ResponseContentError.new(e, xml)
       end
+
+      def extract(element, method, node_name, &blk)
+        if api_version
+          node_name = node_name.split('/').reduce("//") do |result, subnode|
+            "#{result}#{api_version}:#{subnode}/"
+          end
+        end
+        if block_given?
+          element.public_send(method, node_name, &blk)
+        else
+          element.public_send(method, node_name)
+        end
+      end
+
     end
   end
 end

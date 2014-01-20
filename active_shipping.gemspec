@@ -27,6 +27,8 @@ Gem::Specification.new do |s|
   s.add_development_dependency('mocha', '~> 0.14.0')
   s.add_development_dependency('timecop')
   s.add_development_dependency('nokogiri')
+  s.add_development_dependency('pry')
+  s.add_development_dependency('pry-debugger')
 
   s.files        = Dir.glob("lib/**/*") + %w(MIT-LICENSE README.markdown CHANGELOG)
   s.require_path = 'lib'

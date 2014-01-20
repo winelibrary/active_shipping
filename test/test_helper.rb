@@ -10,6 +10,8 @@ require 'active_shipping'
 require 'mocha/setup'
 require 'timecop'
 require 'nokogiri'
+require 'pry'
+require 'pry-debugger'
 
 XmlNode # trigger autorequire
 
